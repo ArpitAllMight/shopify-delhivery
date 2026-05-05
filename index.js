@@ -31,34 +31,20 @@ async function saveToSheets(orderId, waybill) {
 app.post('/webhook/order', async (req, res) => {
     const order = req.body
     try {
-        const shipment = await axios.post(
-            'https://track.delhivery.com/api/cmu/create.json',
-            {
-                format: 'json',
-                data: {
-                    shipments: [{
-                        name: order.shipping_address.name,
-                        add: order.shipping_address.address1,
-                        city: order.shipping_address.city,
-                        state: order.shipping_address.province,
-                        pin: order.shipping_address.zip,
-                        phone: order.phone,
-                        order: order.id,
-                        payment_mode: 'Prepaid',
-                        cod_amount: 0,
-                        weight: 500
-                    }]
-                }
-            },
-            { headers: { Authorization: `Token ${process.env.DELHIVERY_TOKEN}` } }
-        )
+        // 🧪 MOCK - Remove this when you have real Delhivery token
+        const waybill = 'MOCK-WAYBILL-' + order.id
 
-        const waybill = shipment.data.packages[0].waybill
+        // Save to Google Sheets
         await saveToSheets(order.id, waybill)
-        res.status(200).send('Shipment created')
+
+        res.status(200).json({
+            success: true,
+            waybill: waybill,
+            message: 'Shipment created successfully'
+        })
 
     } catch (err) {
-        console.error('Delhivery error:', err.message)
+        console.error('Error:', err.message)
         res.status(500).send('Error creating shipment')
     }
 })
