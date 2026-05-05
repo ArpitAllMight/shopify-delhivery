@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const axios = require('axios')
 const { google } = require('googleapis')
+const cheerio = require('cheerio')
 
 const app = express()
 app.use(express.json())
@@ -273,9 +274,6 @@ app.get('/return-requests/:email', (req, res) => {
 // Export all website pages data into Google Sheets
 // Data: URL, Title, Meta description, H1, Images
 // =====================================================================
-
-const cheerio = require('cheerio')
-
 // Q5 - Fetch and parse a single page
 async function fetchPageData(url) {
     try {
@@ -305,8 +303,8 @@ async function savePageDataToSheets(pages) {
 
     // Add headers first
     await sheets.spreadsheets.values.update({
-        spreadsheetId: '1sRGsWsrnVGgtgek2mOyvPk3gBnj7qereV0B5gYLwEjE',
-        range: 'Sheet1!A1:F1',
+        spreadsheetId: '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs',
+        range: 'pages!A1:F1',
         valueInputOption: 'RAW',
         resource: {
             values: [['URL', 'Title', 'Meta Description', 'H1', 'Image Count', 'Image URLs']]
@@ -324,8 +322,8 @@ async function savePageDataToSheets(pages) {
     ])
 
     await sheets.spreadsheets.values.append({
-        spreadsheetId: '1sRGsWsrnVGgtgek2mOyvPk3gBnj7qereV0B5gYLwEjE',
-        range: 'Sheet1!A2',
+        spreadsheetId: '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs',
+        range: 'pages!A2',
         valueInputOption: 'RAW',
         resource: { values: rows }
     })
