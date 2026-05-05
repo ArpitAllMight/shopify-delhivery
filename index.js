@@ -232,4 +232,40 @@ app.get('/save-tracking', async (req, res) => {
     }
 })
 
+// Store return requests in memory
+let returnRequests = []
+
+// Q4 - Point 2: Handle return request submission
+app.post('/return-request', async (req, res) => {
+    const { order_id, order_number, product_name, customer_email, reason } = req.body
+    try {
+        // Q4 - Point 3: Track return status
+        const returnRequest = {
+            id: Date.now(),
+            order_id,
+            order_number,
+            product_name,
+            customer_email,
+            reason,
+            status: 'Pending',
+            date: new Date().toLocaleDateString()
+        }
+        returnRequests.push(returnRequest)
+
+        // Redirect back to returns page
+        res.redirect('https://fzmmyj-k4.myshopify.com/pages/returns?success=true')
+
+    } catch (err) {
+        console.error('Return request error:', err.message)
+        res.status(500).send('Error submitting return request')
+    }
+})
+
+// Q4 - Point 3: Get return requests for a customer
+app.get('/return-requests/:email', (req, res) => {
+    const email = req.params.email
+    const customerReturns = returnRequests.filter(r => r.customer_email === email)
+    res.json(customerReturns)
+})
+
 app.listen(3000, () => console.log('Server running on port 3000'))
