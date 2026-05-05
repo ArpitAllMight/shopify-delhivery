@@ -222,4 +222,14 @@ app.get('/tracking', (req, res) => {
     res.json(dailyData)
 })
 
+// Manual save for testing
+app.get('/save-tracking', async (req, res) => {
+    try {
+        await saveTrackingToSheets(dailyData)
+        res.json({ success: true, data: dailyData })
+    } catch (err) {
+        res.status(500).json({ error: err.message })
+    }
+})
+
 app.listen(3000, () => console.log('Server running on port 3000'))
