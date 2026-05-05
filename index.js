@@ -293,43 +293,67 @@ async function fetchPageData(url) {
     }
 }
 
-// Q5 - Save page data to Google Sheet
+// Q5 - Save page data to Google Sheet ()
 async function savePageDataToSheets(pages) {
     const auth = new google.auth.GoogleAuth({
         credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
         scopes: ['https://www.googleapis.com/auth/spreadsheets']
     })
     const sheets = google.sheets({ version: 'v4', auth })
+    const spreadsheetId = '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs'
 
-    // Add headers first
-    await sheets.spreadsheets.values.update({
-        spreadsheetId: '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs',
-        range: 'pages!A1:F1',
-        valueInputOption: 'RAW',
-        resource: {
-            values: [['URL', 'Title', 'Meta Description', 'H1', 'Image Count', 'Image URLs']]
+    try {
+        // Check if 'pages' sheet exists and if headers are present
+        const existingData = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: 'pages!A1:F1'
+        }).catch(() => null)
+
+        // Only add headers if sheet is empty or first row doesn't have headers
+        if (!existingData || !existingData.data.values || existingData.data.values.length === 0) {
+            await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: 'pages!A1:F1',
+                valueInputOption: 'RAW',
+                resource: {
+                    values: [['URL', 'Title', 'Meta Description', 'H1', 'Image Count', 'Image URLs']]
+                }
+            })
         }
-    })
 
-    // Add page data
-    const rows = pages.map(p => [
-        p.url,
-        p.title || '',
-        p.meta_description || '',
-        p.h1 || '',
-        p.image_count || 0,
-        p.image_urls || ''
-    ])
+        // Find the next empty row
+        const sheetData = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: 'pages!A:F'
+        })
+        
+        const nextRow = sheetData.data.values ? sheetData.data.values.length + 1 : 2
 
-    await sheets.spreadsheets.values.append({
-        spreadsheetId: '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs',
-        range: 'pages!A2',
-        valueInputOption: 'RAW',
-        resource: { values: rows }
-    })
+        // Prepare data rows
+        const rows = pages.map(p => [
+            p.url || '',
+            p.title || '',
+            p.meta_description || '',
+            p.h1 || '',
+            p.image_count !== undefined ? p.image_count.toString() : '0',
+            p.image_urls || ''
+        ])
+
+        // Append data at the correct position
+        await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `pages!A${nextRow}:F${nextRow + rows.length - 1}`,
+            valueInputOption: 'RAW',
+            resource: { values: rows }
+        })
+
+    } catch (err) {
+        console.error('Sheet save error:', err.message)
+        throw err
+    }
 }
 
-// Q5 - Endpoint to trigger data export
+// Q5 - Endpoint to trigger data export ()
 app.get('/export-pages', async (req, res) => {
     try {
         // List of your store pages to export
@@ -341,7 +365,25 @@ app.get('/export-pages', async (req, res) => {
         ]
 
         // Fetch data for all pages
-        const pageData = await Promise.all(pages.map(url => fetchPageData(url)))
+        const pageData = []
+        for (const url of pages) {
+            try {
+                const data = await fetchPageData(url)
+                pageData.push(data)
+                console.log(`Fetched: ${url}`)
+            } catch (err) {
+                console.error(`Failed to fetch ${url}:`, err.message)
+                pageData.push({ 
+                    url, 
+                    title: 'Error fetching page',
+                    meta_description: '',
+                    h1: '',
+                    image_count: 0,
+                    image_urls: '',
+                    error: err.message 
+                })
+            }
+        }
 
         // Save to Google Sheet
         await savePageDataToSheets(pageData)
