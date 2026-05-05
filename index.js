@@ -82,17 +82,17 @@ app.post('/webhook/order', async (req, res) => {
 
 app.post('/shipping/rates', async (req, res) => {
     try {
-        // Extract pincode and weight safely
         const rate = req.body.rate || {}
-        const pincode = rate.destination?.postal_code || rate.destination?.zip || '110001'
-        const weight = rate.total_weight || rate.items_total_weight || 2500
+        const pincode = rate.destination?.postal_code || '110001'
+        const weight = rate.total_weight || 2500
 
         console.log(`Q2: Pincode=${pincode}, Weight=${weight}g`)
 
         try {
             const eshopbox = await axios.get('https://api.eshopbox.com/shipping/rates', {
                 params: { pincode, weight },
-                headers: { Authorization: `Bearer ${process.env.ESHOPBOX_TOKEN}` }
+                headers: { Authorization: `Bearer ${process.env.ESHOPBOX_TOKEN}` },
+                timeout: 3000  // ⬅️ ADD THIS: 3 second timeout
             })
 
             const rates = eshopbox.data.rates.map(r => ({
@@ -113,7 +113,9 @@ app.post('/shipping/rates', async (req, res) => {
                     service_name: 'Standard Shipping',
                     service_code: 'standard',
                     total_price: 5000,
-                    currency: 'INR'
+                    currency: 'INR',
+                    min_delivery_date: '3-5 days',
+                    max_delivery_date: '7 days'
                 }]
             })
         }
