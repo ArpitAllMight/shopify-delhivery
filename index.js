@@ -250,19 +250,38 @@ app.post('/return-request', async (req, res) => {
         const returnRequest = {
             id: Date.now(),
             order_id,
-            order_number,
-            product_name,
+            order_number: order_number || ('#' + order_id),
+            product_name: product_name || 'Product',
             customer_email,
-            reason,
+            reason: reason || 'Not specified',
             status: 'Pending',
             date: new Date().toLocaleDateString()
         }
         returnRequests.push(returnRequest)
-        res.redirect('https://fzmmyj-k4.myshopify.com/pages/returns?success=true')
+        
+        console.log('Return request created:', returnRequest)
+        
+        // Return JSON instead of redirect
+        res.status(200).json({
+            success: true,
+            message: 'Return request submitted successfully',
+            data: returnRequest
+        })
+
     } catch (err) {
         console.error('Return request error:', err.message)
-        res.status(500).send('Error submitting return request')
+        res.status(500).json({ error: 'Error submitting return request' })
     }
+})
+
+app.get('/return-requests/:email', (req, res) => {
+    const email = req.params.email
+    const customerReturns = returnRequests.filter(r => r.customer_email === email)
+    res.json({
+        success: true,
+        count: customerReturns.length,
+        data: customerReturns
+    })
 })
 
 app.get('/return-requests/:email', (req, res) => {
