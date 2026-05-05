@@ -81,36 +81,45 @@ app.post('/webhook/order', async (req, res) => {
 // =====================================================================
 
 app.post('/shipping/rates', async (req, res) => {
-    const { rate } = req.body
-    const pincode = rate.destination.postal_code
-    const weight = rate.total_weight
-
     try {
-        const eshopbox = await axios.get('https://api.eshopbox.com/shipping/rates', {
-            params: { pincode, weight },
-            headers: { Authorization: `Bearer ${process.env.ESHOPBOX_TOKEN}` }
-        })
+        // Extract pincode and weight safely
+        const rate = req.body.rate || {}
+        const pincode = rate.destination?.postal_code || rate.destination?.zip || '110001'
+        const weight = rate.total_weight || rate.items_total_weight || 2500
 
-        const rates = eshopbox.data.rates.map(r => ({
-            service_name: r.service_name,
-            service_code: r.code,
-            total_price: r.price * 100,
-            currency: 'INR',
-            min_delivery_date: r.min_date,
-            max_delivery_date: r.max_date
-        }))
+        console.log(`Q2: Pincode=${pincode}, Weight=${weight}g`)
 
-        res.json({ rates })
+        try {
+            const eshopbox = await axios.get('https://api.eshopbox.com/shipping/rates', {
+                params: { pincode, weight },
+                headers: { Authorization: `Bearer ${process.env.ESHOPBOX_TOKEN}` }
+            })
+
+            const rates = eshopbox.data.rates.map(r => ({
+                service_name: r.service_name,
+                service_code: r.code,
+                total_price: r.price * 100,
+                currency: 'INR',
+                min_delivery_date: r.min_date,
+                max_delivery_date: r.max_date
+            }))
+
+            res.json({ rates })
+        } catch (apiErr) {
+            console.error('Eshopbox API error:', apiErr.message)
+            // Fallback rates
+            res.json({
+                rates: [{
+                    service_name: 'Standard Shipping',
+                    service_code: 'standard',
+                    total_price: 5000,
+                    currency: 'INR'
+                }]
+            })
+        }
     } catch (err) {
-        console.error('Eshopbox error:', err.message)
-        res.json({
-            rates: [{
-                service_name: 'Standard Shipping',
-                service_code: 'standard',
-                total_price: 5000,
-                currency: 'INR'
-            }]
-        })
+        console.error('Q2 error:', err.message)
+        res.status(500).json({ error: 'Internal server error' })
     }
 })
 
