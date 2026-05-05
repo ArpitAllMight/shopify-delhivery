@@ -156,15 +156,10 @@ let dailyData = {
 
 app.post('/webhook/checkout', async (req, res) => {
     try {
-        const today = new Date().toLocaleDateString()
-        if (dailyData.date !== today) {
-            await saveTrackingToSheets(dailyData)
-            dailyData = { date: today, activeUsers: 0, totalSales: 0, cancelledOrders: 0 }
-        }
         dailyData.activeUsers += 1
+        await saveTrackingToSheets(dailyData) // Save immediately
         res.status(200).send('Checkout tracked')
     } catch (err) {
-        console.error('Checkout tracking error:', err.message)
         res.status(500).send('Error')
     }
 })
