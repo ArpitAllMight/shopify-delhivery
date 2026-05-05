@@ -132,4 +132,94 @@ app.post('/webhook/eshopbox-order', async (req, res) => {
     }
 })
 
+// =====================================================================
+// Q3 - Website Data & Sales Tracking Sheet
+// Track daily active users, sales, and cancel/return orders
+// =====================================================================
+
+// Store daily data in memory
+let dailyData = {
+    date: new Date().toLocaleDateString(),
+    activeUsers: 0,
+    totalSales: 0,
+    cancelledOrders: 0
+}
+
+// Q3 - Point 1: Track daily active users (via checkout creation)
+app.post('/webhook/checkout', async (req, res) => {
+    try {
+        const today = new Date().toLocaleDateString()
+        if (dailyData.date !== today) {
+            // Save previous day data and reset
+            await saveTrackingToSheets(dailyData)
+            dailyData = { date: today, activeUsers: 0, totalSales: 0, cancelledOrders: 0 }
+        }
+        dailyData.activeUsers += 1
+        res.status(200).send('Checkout tracked')
+    } catch (err) {
+        console.error('Checkout tracking error:', err.message)
+        res.status(500).send('Error')
+    }
+})
+
+// Q3 - Point 2: Track daily sales (via order creation)
+app.post('/webhook/sales', async (req, res) => {
+    try {
+        const order = req.body
+        const today = new Date().toLocaleDateString()
+        if (dailyData.date !== today) {
+            await saveTrackingToSheets(dailyData)
+            dailyData = { date: today, activeUsers: 0, totalSales: 0, cancelledOrders: 0 }
+        }
+        dailyData.totalSales += parseFloat(order.total_price || 0)
+        res.status(200).send('Sale tracked')
+    } catch (err) {
+        console.error('Sales tracking error:', err.message)
+        res.status(500).send('Error')
+    }
+})
+
+// Q3 - Point 3: Track cancelled/return orders
+app.post('/webhook/cancelled', async (req, res) => {
+    try {
+        const today = new Date().toLocaleDateString()
+        if (dailyData.date !== today) {
+            await saveTrackingToSheets(dailyData)
+            dailyData = { date: today, activeUsers: 0, totalSales: 0, cancelledOrders: 0 }
+        }
+        dailyData.cancelledOrders += 1
+        res.status(200).send('Cancellation tracked')
+    } catch (err) {
+        console.error('Cancellation tracking error:', err.message)
+        res.status(500).send('Error')
+    }
+})
+
+// Save daily tracking data to Google Sheet
+async function saveTrackingToSheets(data) {
+    const auth = new google.auth.GoogleAuth({
+        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    })
+    const sheets = google.sheets({ version: 'v4', auth })
+    await sheets.spreadsheets.values.append({
+        spreadsheetId: '1qXiVLJBBo8bVW0xq-u5CJ-SCVK_h-by7V8G8Ud751gA',
+        range: 'Sheet1!A:D',
+        valueInputOption: 'RAW',
+        resource: {
+            values: [[
+                data.date,
+                data.activeUsers,
+                data.totalSales,
+                data.cancelledOrders
+            ]]
+        }
+    })
+}
+
+// Q3 - Endpoint to manually check current daily data
+app.get('/tracking', (req, res) => {
+    res.json(dailyData)
+})
+
 app.listen(3000, () => console.log('Server running on port 3000'))
