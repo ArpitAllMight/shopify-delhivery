@@ -326,7 +326,7 @@ async function savePageDataToSheets(pages) {
             spreadsheetId,
             range: 'pages!A:F'
         })
-        
+
         const nextRow = sheetData.data.values ? sheetData.data.values.length + 1 : 2
 
         // Prepare data rows
@@ -373,14 +373,14 @@ app.get('/export-pages', async (req, res) => {
                 console.log(`Fetched: ${url}`)
             } catch (err) {
                 console.error(`Failed to fetch ${url}:`, err.message)
-                pageData.push({ 
-                    url, 
+                pageData.push({
+                    url,
                     title: 'Error fetching page',
                     meta_description: '',
                     h1: '',
                     image_count: 0,
                     image_urls: '',
-                    error: err.message 
+                    error: err.message
                 })
             }
         }
@@ -398,6 +398,268 @@ app.get('/export-pages', async (req, res) => {
         console.error('Export error:', err.message)
         res.status(500).json({ error: err.message })
     }
+})
+
+// =====================================================================
+// Q6 - Timer Based Discount
+// Total timer: 15 minutes, Discount increases 2% every 1 minute
+// Timer starts after buffer time, Discount stops before timer ends
+// =====================================================================
+
+app.use(cors({
+    origin: [
+        'https://fzmmyj-k4.myshopify.com',
+        'https://shopify-delhivery.onrender.com',
+        'http://localhost:3000'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}))
+
+// Handle preflight requests
+app.options('*', cors())
+
+// Store active discount timers
+let discountTimers = {}
+
+// Product discount configuration
+const DISCOUNT_CONFIG = {
+    totalDuration: 15 * 60 * 1000,  // 15 minutes in milliseconds
+    discountIncrement: 2,            // 2% per minute
+    incrementInterval: 60 * 1000,    // 1 minute in milliseconds
+    bufferTime: 30 * 1000,           // 30 seconds buffer before start
+    stopBeforeEnd: 2 * 60 * 1000,    // Stop 2 minutes before timer ends
+    maxDiscount: 30                   // Maximum 30% discount (15 min × 2%)
+}
+
+// Q6 - API to start a discount timer for a product
+app.post('/discount/start', (req, res) => {
+    const { productId, originalPrice } = req.body
+
+    if (!productId || !originalPrice) {
+        return res.status(400).json({
+            error: 'productId and originalPrice are required'
+        })
+    }
+
+    // Stop any existing timer for this product
+    if (discountTimers[productId]) {
+        clearInterval(discountTimers[productId].interval)
+        clearTimeout(discountTimers[productId].startTimeout)
+        clearTimeout(discountTimers[productId].endTimeout)
+    }
+
+    // Initialize timer data
+    const timerData = {
+        productId,
+        originalPrice: parseFloat(originalPrice),
+        currentPrice: parseFloat(originalPrice),
+        currentDiscount: 0,
+        startTime: null,
+        isActive: false,
+        isBuffering: true,
+        isEnded: false,
+        totalDuration: DISCOUNT_CONFIG.totalDuration,
+        elapsedTime: 0,
+        remainingTime: DISCOUNT_CONFIG.totalDuration
+    }
+
+    discountTimers[productId] = timerData
+
+    // Buffer time before starting the actual timer
+    timerData.startTimeout = setTimeout(() => {
+        timerData.isBuffering = false
+        timerData.isActive = true
+        timerData.startTime = Date.now()
+
+        console.log(`✅ Timer started for product ${productId}`)
+
+        // Emit timer started event
+        io.emit('discountUpdate', {
+            productId,
+            status: 'started',
+            ...getTimerStatus(timerData)
+        })
+
+        // Start discount increments
+        timerData.interval = setInterval(() => {
+            if (timerData.isActive && !timerData.isEnded) {
+                // Increase discount by 2%
+                timerData.currentDiscount = Math.min(
+                    timerData.currentDiscount + DISCOUNT_CONFIG.discountIncrement,
+                    DISCOUNT_CONFIG.maxDiscount
+                )
+
+                // Calculate new price
+                timerData.currentPrice = timerData.originalPrice *
+                    (1 - timerData.currentDiscount / 100)
+                timerData.currentPrice = Math.round(timerData.currentPrice * 100) / 100
+
+                // Update elapsed and remaining time
+                timerData.elapsedTime = Date.now() - timerData.startTime
+                timerData.remainingTime = DISCOUNT_CONFIG.totalDuration - timerData.elapsedTime
+
+                console.log(`Product ${productId}: ${timerData.currentDiscount}% discount - $${timerData.currentPrice}`)
+
+                // Emit update to all connected clients
+                io.emit('discountUpdate', {
+                    productId,
+                    status: 'active',
+                    ...getTimerStatus(timerData)
+                })
+
+                // Check if we should stop discount before timer ends
+                if (timerData.elapsedTime >= (DISCOUNT_CONFIG.totalDuration - DISCOUNT_CONFIG.stopBeforeEnd)) {
+                    stopDiscountTimer(productId)
+                }
+            }
+        }, DISCOUNT_CONFIG.incrementInterval)
+
+    }, DISCOUNT_CONFIG.bufferTime)
+
+    // Auto-stop timer after total duration
+    timerData.endTimeout = setTimeout(() => {
+        if (discountTimers[productId]) {
+            stopDiscountTimer(productId)
+        }
+    }, DISCOUNT_CONFIG.totalDuration + DISCOUNT_CONFIG.bufferTime)
+
+    res.json({
+        success: true,
+        message: `Discount timer initialized for product ${productId}`,
+        bufferTime: DISCOUNT_CONFIG.bufferTime / 1000 + ' seconds',
+        timerData: getTimerStatus(timerData)
+    })
+})
+
+// Q6 - API to get current discount status
+app.get('/discount/status/:productId', (req, res) => {
+    const { productId } = req.params
+    const timer = discountTimers[productId]
+
+    if (!timer) {
+        return res.json({
+            productId,
+            isActive: false,
+            currentDiscount: 0,
+            message: 'No active timer for this product'
+        })
+    }
+
+    res.json(getTimerStatus(timer))
+})
+
+// Q6 - API to stop discount timer manually
+app.post('/discount/stop', (req, res) => {
+    const { productId } = req.body
+
+    if (!discountTimers[productId]) {
+        return res.status(404).json({
+            error: 'No active timer found for this product'
+        })
+    }
+
+    stopDiscountTimer(productId)
+
+    res.json({
+        success: true,
+        message: `Discount timer stopped for product ${productId}`
+    })
+})
+
+// Q6 - API to get all active timers
+app.get('/discount/active', (req, res) => {
+    const activeTimers = Object.entries(discountTimers)
+        .filter(([_, timer]) => timer.isActive)
+        .map(([productId, timer]) => ({
+            productId,
+            ...getTimerStatus(timer)
+        }))
+
+    res.json(activeTimers)
+})
+
+// Helper function to stop discount timer
+function stopDiscountTimer(productId) {
+    const timer = discountTimers[productId]
+    if (!timer) return
+
+    timer.isActive = false
+    timer.isEnded = true
+    clearInterval(timer.interval)
+    clearTimeout(timer.startTimeout)
+    clearTimeout(timer.endTimeout)
+
+    // Keep final discount for a while, then reset
+    setTimeout(() => {
+        if (discountTimers[productId]) {
+            discountTimers[productId].currentDiscount = 0
+            discountTimers[productId].currentPrice = discountTimers[productId].originalPrice
+
+            io.emit('discountUpdate', {
+                productId,
+                status: 'reset',
+                ...getTimerStatus(discountTimers[productId])
+            })
+
+            delete discountTimers[productId]
+        }
+    }, 5 * 60 * 1000) // Keep price for 5 minutes after timer ends
+
+    io.emit('discountUpdate', {
+        productId,
+        status: 'ended',
+        ...getTimerStatus(timer)
+    })
+
+    console.log(`⏹️ Timer stopped for product ${productId}`)
+}
+
+// Helper function to get timer status
+function getTimerStatus(timer) {
+    return {
+        productId: timer.productId,
+        originalPrice: timer.originalPrice,
+        currentPrice: timer.currentPrice,
+        currentDiscount: timer.currentDiscount,
+        isActive: timer.isActive,
+        isBuffering: timer.isBuffering,
+        isEnded: timer.isEnded,
+        elapsedTime: timer.isActive ? Date.now() - timer.startTime : 0,
+        remainingTime: timer.isActive ?
+            Math.max(0, DISCOUNT_CONFIG.totalDuration - (Date.now() - timer.startTime)) :
+            DISCOUNT_CONFIG.totalDuration,
+        totalDuration: DISCOUNT_CONFIG.totalDuration
+    }
+}
+
+// Q6 - WebSocket connection handler
+io.on('connection', (socket) => {
+    console.log('👤 Client connected')
+
+    // Send current active timers to newly connected client
+    const activeTimers = Object.entries(discountTimers)
+        .filter(([_, timer]) => timer.isActive || timer.isBuffering)
+        .map(([productId, timer]) => ({
+            productId,
+            ...getTimerStatus(timer)
+        }))
+
+    if (activeTimers.length > 0) {
+        socket.emit('activeTimers', activeTimers)
+    }
+
+    socket.on('disconnect', () => {
+        console.log('👤 Client disconnected')
+    })
+})
+
+// Update app.listen to use server instead
+// Replace: app.listen(3000, () => console.log('Server running on port 3000'))
+// With:
+server.listen(process.env.PORT || 3000, () => {
+    console.log(`Server running on port ${process.env.PORT || 3000}`)
 })
 
 app.listen(3000, () => console.log('Server running on port 3000'))
