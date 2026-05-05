@@ -22,8 +22,6 @@ app.use(cors({
     credentials: true
 }))
 
-app.options('*', cors())
-
 // ===== CREATE HTTP SERVER =====
 const server = http.createServer(app)
 const io = socketIo(server, {
