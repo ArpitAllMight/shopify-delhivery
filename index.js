@@ -35,7 +35,7 @@ app.post('/webhook/order', async (req, res) => {
         const waybill = 'MOCK-WAYBILL-' + order.id
 
         // Save to Google Sheets
-        await saveToSheets(order.id, waybill)
+        // await saveToSheets(order.id, waybill)
 
         res.status(200).json({
             success: true,
