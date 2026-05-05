@@ -204,7 +204,7 @@ async function saveTrackingToSheets(data) {
     const sheets = google.sheets({ version: 'v4', auth })
     await sheets.spreadsheets.values.append({
         spreadsheetId: '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs',
-        range: "'Tracking'!A:D",
+        range: 'tracking!A:D',
         valueInputOption: 'RAW',
         resource: {
             values: [[
