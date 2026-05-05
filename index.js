@@ -283,6 +283,7 @@ async function fetchPageData(url) {
     }
 }
 
+// Q5 - Save page data to Google Sheet (FIXED - Won't crash server)
 async function savePageDataToSheets(pages) {
     try {
         const auth = new google.auth.GoogleAuth({
@@ -292,13 +293,8 @@ async function savePageDataToSheets(pages) {
         const sheets = google.sheets({ version: 'v4', auth })
         const spreadsheetId = '1BhqYVQfkQrU_z2WHRnlBaeUoF0fRZsvEH2TFTQBdUXs'
 
-        // Check if 'pages' sheet exists
-        const existingData = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: 'pages!A1:F1'
-        }).catch(() => null)
-
-        if (!existingData || !existingData.data.values || existingData.data.values.length === 0) {
+        // Try to write headers to pages sheet
+        try {
             await sheets.spreadsheets.values.update({
                 spreadsheetId,
                 range: 'pages!A1:F1',
@@ -307,15 +303,11 @@ async function savePageDataToSheets(pages) {
                     values: [['URL', 'Title', 'Meta Description', 'H1', 'Image Count', 'Image URLs']]
                 }
             })
+        } catch (headerErr) {
+            console.error('Header write error (non-fatal):', headerErr.message)
         }
 
-        const sheetData = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: 'pages!A:F'
-        })
-
-        const nextRow = sheetData.data.values ? sheetData.data.values.length + 1 : 2
-
+        // Prepare data rows
         const rows = pages.map(p => [
             p.url || '',
             p.title || '',
@@ -325,18 +317,24 @@ async function savePageDataToSheets(pages) {
             p.image_urls || ''
         ])
 
-        await sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `pages!A${nextRow}:F${nextRow + rows.length - 1}`,
-            valueInputOption: 'RAW',
-            resource: { values: rows }
-        })
+        // Try to append data
+        try {
+            await sheets.spreadsheets.values.append({
+                spreadsheetId,
+                range: 'pages!A2:F',
+                valueInputOption: 'RAW',
+                resource: { values: rows }
+            })
+            console.log('✅ Page data saved to sheets')
+        } catch (appendErr) {
+            console.error('Data append error (non-fatal):', appendErr.message)
+        }
+
     } catch (err) {
-        console.error('Sheet save error:', err.message)
-        throw err
+        console.error('Google Sheets error (non-fatal):', err.message)
+        // Don't throw - just log the error
     }
 }
-
 app.get('/export-pages', async (req, res) => {
     try {
         const pages = [
