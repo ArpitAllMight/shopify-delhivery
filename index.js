@@ -268,4 +268,96 @@ app.get('/return-requests/:email', (req, res) => {
     res.json(customerReturns)
 })
 
+// =====================================================================
+// Q5 - Website Data Export
+// Export all website pages data into Google Sheets
+// Data: URL, Title, Meta description, H1, Images
+// =====================================================================
+
+const cheerio = require('cheerio')
+
+// Q5 - Fetch and parse a single page
+async function fetchPageData(url) {
+    try {
+        const response = await axios.get(url)
+        const $ = cheerio.load(response.data)
+
+        return {
+            url: url,
+            title: $('title').text().trim(),
+            meta_description: $('meta[name="description"]').attr('content') || '',
+            h1: $('h1').first().text().trim(),
+            image_count: $('img').length,
+            image_urls: $('img').map((i, el) => $(el).attr('src')).get().slice(0, 5).join(', ')
+        }
+    } catch (err) {
+        return { url, error: err.message }
+    }
+}
+
+// Q5 - Save page data to Google Sheet
+async function savePageDataToSheets(pages) {
+    const auth = new google.auth.GoogleAuth({
+        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    })
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    // Add headers first
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: '1sRGsWsrnVGgtgek2mOyvPk3gBnj7qereV0B5gYLwEjE',
+        range: 'Sheet1!A1:F1',
+        valueInputOption: 'RAW',
+        resource: {
+            values: [['URL', 'Title', 'Meta Description', 'H1', 'Image Count', 'Image URLs']]
+        }
+    })
+
+    // Add page data
+    const rows = pages.map(p => [
+        p.url,
+        p.title || '',
+        p.meta_description || '',
+        p.h1 || '',
+        p.image_count || 0,
+        p.image_urls || ''
+    ])
+
+    await sheets.spreadsheets.values.append({
+        spreadsheetId: '1sRGsWsrnVGgtgek2mOyvPk3gBnj7qereV0B5gYLwEjE',
+        range: 'Sheet1!A2',
+        valueInputOption: 'RAW',
+        resource: { values: rows }
+    })
+}
+
+// Q5 - Endpoint to trigger data export
+app.get('/export-pages', async (req, res) => {
+    try {
+        // List of your store pages to export
+        const pages = [
+            'https://fzmmyj-k4.myshopify.com',
+            'https://fzmmyj-k4.myshopify.com/collections/all',
+            'https://fzmmyj-k4.myshopify.com/pages/returns',
+            'https://fzmmyj-k4.myshopify.com/pages/contact'
+        ]
+
+        // Fetch data for all pages
+        const pageData = await Promise.all(pages.map(url => fetchPageData(url)))
+
+        // Save to Google Sheet
+        await savePageDataToSheets(pageData)
+
+        res.json({
+            success: true,
+            message: `Exported ${pageData.length} pages`,
+            data: pageData
+        })
+
+    } catch (err) {
+        console.error('Export error:', err.message)
+        res.status(500).json({ error: err.message })
+    }
+})
+
 app.listen(3000, () => console.log('Server running on port 3000'))
